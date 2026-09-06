@@ -163,9 +163,9 @@ button {
 /* ── Portfolio: vertical chapters, horizontal shoots ────── */
 .gallery-viewport {
   height: 100dvh;
-  overflow-y: auto;
+  overflow-y: scroll;          /* always scrollable so snap fires on trackpads */
   scroll-snap-type: y mandatory;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
 }
 .shoot {
   height: 100dvh;
@@ -188,9 +188,10 @@ button {
   flex: 1; min-height: 0;
   display: flex; align-items: center; gap: clamp(1rem, 2.5vw, 2.5rem);
   overflow-x: auto; overflow-y: hidden;
-  scroll-snap-type: x proximity;
+  scroll-snap-type: x mandatory;   /* snaps cleanly on horizontal swipe/scroll */
+  -webkit-overflow-scrolling: touch;
   padding: 1rem var(--gutter) 1.5rem;
-  scrollbar-width: none;            /* browsing is by wheel/swipe, not bar */
+  scrollbar-width: none;
 }
 .shoot-track::-webkit-scrollbar { display: none; }
 
