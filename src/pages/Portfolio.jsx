@@ -5,21 +5,30 @@ import Lightbox from "../components/Lightbox.jsx";
 
 /*
  * ── How the gallery scroll works ─────────────────────────────────────
- * Pure CSS scroll-snap — no JS wheel interception at all.
+ * Approach chosen: CSS scroll-snap for structure + a single small wheel
+ * handler, rather than full JS scroll-hijacking.
  *
- * - The outer .gallery-viewport has `scroll-snap-type: y mandatory` and
- *   `overflow-y: scroll`. Two-finger up/down on a trackpad (or mouse
- *   wheel) scrolls vertically between shoot sections, which snap into
- *   place one at a time.
+ * - The outer .gallery-viewport scrolls vertically with
+ *   `scroll-snap-type: y mandatory`, so each shoot is a full-viewport
+ *   "chapter" that snaps into place.
+ * - Each chapter contains a .shoot-track that scrolls horizontally
+ *   (`overflow-x: auto`).
+ * - One `wheel` listener translates vertical wheel/trackpad input into
+ *   horizontal movement on the *current* chapter's track. Only when the
+ *   track has reached its end (in the direction of travel) do we let the
+ *   event fall through, so native vertical snap carries the visitor to
+ *   the next chapter.
  *
- * - Each .shoot-track has `scroll-snap-type: x mandatory` and
- *   `overflow-x: auto`. Two-finger left/right on a trackpad (or a
- *   horizontal swipe on touch) browses the photos within a section.
+ * Why this hybrid: the browser keeps ownership of scrolling (momentum,
+ * snap physics, accessibility, no dependencies), and the JS surface is
+ * ~20 lines that only redirects wheel input — much less fragile than
+ * re-implementing scrolling wholesale.
  *
- * Why no wheel hijacking: intercepting vertical scroll and redirecting it
- * horizontally breaks native trackpad momentum and prevents users from
- * scrolling between sections with two fingers. Letting the browser own
- * all scroll feels far better on modern trackpads and touch screens.
+ * Touch devices: `wheel` events don't fire on touch, so phones never see
+ * the hijack. There, the natural gestures apply — vertical swipe moves
+ * between chapters (outer snap container), horizontal swipe browses the
+ * photos (each track is a native swipeable carousel). This is the
+ * deliberate mobile fallback: no vertical-touch hijacking at all.
  * ─────────────────────────────────────────────────────────────────────
  */
 
@@ -35,10 +44,8 @@ function ShootSection({ shoot, onOpen, registerTrack }) {
         label: `${shoot.title} — frame ${String(i + 1).padStart(2, "0")}`,
       }));
 
-  // Hand this chapter's track element up so the chapter-dots can stay in sync.
-  useEffect(() => {
-    registerTrack(shoot.index - 1, trackRef.current);
-  }, [registerTrack, shoot.index]);
+  // Hand this chapter's track element up to the page-level wheel handler.
+  useEffect(() => registerTrack(shoot.index - 1, trackRef.current), [registerTrack, shoot.index]);
 
   // Track which frame is nearest the viewport centre for the progress dots.
   const onScroll = () => {
@@ -83,7 +90,7 @@ function ShootSection({ shoot, onOpen, registerTrack }) {
             )}
           </button>
         ))}
-        <span className="frame-end">end of shoot — scroll down for next</span>
+        <span className="frame-end">end of this shoot — keep scrolling</span>
       </div>
 
       <footer className="shoot-foot">
@@ -93,7 +100,10 @@ function ShootSection({ shoot, onOpen, registerTrack }) {
           ))}
         </div>
         <span className="shoot-hint">
-          ← swipe left/right to browse · scroll down for next shoot →
+          scroll to browse this shoot
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
         </span>
       </footer>
     </section>
@@ -108,6 +118,36 @@ export default function Portfolio() {
 
   const registerTrack = useCallback((i, el) => {
     tracksRef.current[i] = el;
+  }, []);
+
+  // Wheel translation: vertical wheel → horizontal movement inside the
+  // current chapter, until its track is exhausted in that direction.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const onWheel = (e) => {
+      const idx = Math.round(viewport.scrollTop / viewport.clientHeight);
+      const track = tracksRef.current[idx];
+      if (!track) return;
+
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : 0;
+      if (delta === 0) return; // pure horizontal trackpad input scrolls the track natively
+
+      const maxLeft = track.scrollWidth - track.clientWidth;
+      const canGo =
+        delta > 0 ? track.scrollLeft < maxLeft - 1 : track.scrollLeft > 1;
+
+      if (canGo) {
+        e.preventDefault();
+        track.scrollLeft += delta;
+      }
+      // else: let the event through — the outer container snaps to the
+      // previous/next chapter natively.
+    };
+
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
   }, []);
 
   // Keep the right-edge chapter dots in sync with the vertical position.
